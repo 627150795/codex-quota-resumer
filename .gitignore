@@ -1,0 +1,5 @@
+.codex-quota-resumer*/
+outputs/
+work/
+*.log
+node_modules/
