@@ -30,6 +30,7 @@ codex --version
 ```
 
 安装成“登录后常驻 watcher”：watcher 会低频监控 Codex 桌面进程；Codex 打开时启动续跑小程序，Codex 关闭时关闭续跑小程序。
+右下角会出现一个蓝色 `C` 托盘图标，双击可以查看等待发送的任务；任务一旦投递到线程，就不会再出现在等待列表里。
 
 ```powershell
 .\install-watcher-startup.ps1 -ThreadId "你的 Codex threadId"
