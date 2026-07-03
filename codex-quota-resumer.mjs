@@ -204,7 +204,7 @@ function openServer() {
       }
       if (msg.method === 'account/rateLimits/updated') {
         latestBucket = getCodexBucket({ rateLimits: msg.params?.rateLimits });
-        highRiskMode = usedPercent(latestBucket) >= highRiskPercent;
+        highRiskMode = shouldCaptureMessages(latestBucket);
         if (isLimitReached(latestBucket)) schedulePendingBackups(latestBucket);
       }
     }
@@ -237,6 +237,10 @@ function usedPercent(bucket) {
 
 function isLimitReached(bucket) {
   return Boolean(bucket?.rateLimitReachedType) || usedPercent(bucket) >= 100;
+}
+
+function shouldCaptureMessages(bucket) {
+  return isLimitReached(bucket) || usedPercent(bucket) >= highRiskPercent;
 }
 
 function keyForUserMessage(item) {
@@ -485,7 +489,7 @@ try {
         server = await connectServer();
         continue;
       }
-      highRiskMode = usedPercent(latestBucket) >= highRiskPercent;
+      highRiskMode = shouldCaptureMessages(latestBucket);
       log(`rate used=${usedPercent(latestBucket)} reset=${latestBucket?.primary?.resetsAt ? new Date(latestBucket.primary.resetsAt * 1000).toISOString() : 'unknown'} reached=${latestBucket?.rateLimitReachedType || 'none'}`);
       if (highRiskMode) await captureThreadRead(server, 'high-risk-poll');
       if (isLimitReached(latestBucket)) schedulePendingBackups(latestBucket);
