@@ -50,6 +50,7 @@ function log(line) {
 
 function notifyUser(title, body) {
   if (!notifications) return;
+  log(`notify title=${JSON.stringify(title)} body=${JSON.stringify(body)}`);
   const script = `
 Add-Type -AssemblyName System.Windows.Forms
 $n = New-Object System.Windows.Forms.NotifyIcon
@@ -69,15 +70,33 @@ $n.Dispose()
   child.unref();
 }
 
+function queueNotification(type, title, body, dedupeKey) {
+  if (!notifications) return;
+  const key = `${type}:${dedupeKey || body || title}`;
+  if (!state.notificationEvents.some((event) => event.key === key)) {
+    state.notificationEvents.push({
+      id: `notification-${Date.now()}-${randomUUID()}`,
+      key,
+      type,
+      title,
+      body,
+      createdAt: new Date().toISOString(),
+      shownAt: null,
+    });
+    saveState();
+  }
+  notifyUser(title, body);
+}
+
 function sleep(ms) {
   return new Promise((resolveSleep) => setTimeout(resolveSleep, Math.max(0, ms)));
 }
 
 function readState() {
   if (!existsSync(statePath)) {
-    return { seenUserMessageKeys: [], backups: [], scheduledBackupIds: [], replayedBackupIds: [], replayAttempts: {} };
+    return { seenUserMessageKeys: [], backups: [], scheduledBackupIds: [], replayedBackupIds: [], replayAttempts: {}, notificationEvents: [] };
   }
-  return JSON.parse(readFileSync(statePath, 'utf8'));
+  return JSON.parse(readFileSync(statePath, 'utf8').replace(/^\uFEFF/, ''));
 }
 
 const state = readState();
@@ -85,6 +104,7 @@ const seen = new Set(state.seenUserMessageKeys || []);
 const scheduled = new Set(state.scheduledBackupIds || []);
 const replayed = new Set(state.replayedBackupIds || []);
 state.replayAttempts ||= {};
+state.notificationEvents ||= [];
 let latestBucket = null;
 let highRiskMode = false;
 let replayQueue = Promise.resolve();
@@ -255,7 +275,14 @@ function captureUserMessage(item, source) {
   state.backups.push(backup);
   saveState();
   log(`backup-saved id=${backupId} source=${source} preview=${JSON.stringify(backup.textPreview)}`);
-  if (isLimitReached(latestBucket)) notifyUser('Codex task backed up', `Quota is exhausted. Saved task: ${backup.textPreview || backupId}`);
+  if (isLimitReached(latestBucket)) {
+    queueNotification(
+      'backup-saved',
+      'Codex task backed up',
+      `Quota is exhausted. Saved task: ${backup.textPreview || backupId}`,
+      backupId,
+    );
+  }
 }
 
 function captureFromItems(items, source) {
@@ -304,7 +331,12 @@ function schedulePendingBackups(bucket) {
     backup.scheduledFor = new Date(dueAt).toISOString();
     saveState();
     log(`replay-scheduled backup=${backup.id} due=${backup.scheduledFor} delayMs=${delayMs}`);
-    notifyUser('Codex replay scheduled', `Will retry after quota reset: ${new Date(dueAt).toLocaleString()}`);
+    queueNotification(
+      'replay-scheduled',
+      'Codex replay scheduled',
+      `Will retry after quota reset: ${new Date(dueAt).toLocaleString()}`,
+      backup.id,
+    );
     setTimeout(() => enqueueReplay(backup), delayMs);
   }
 }
