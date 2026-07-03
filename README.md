@@ -62,6 +62,10 @@ node .\codex-quota-resumer.mjs --thread-id "..." --high-risk-percent 90
 - `--once`：只检查一次额度，适合测试。
 - `--replay-now latest`：立刻重投最近一条未完成备份。
 
+## 通知
+
+`backup-saved` 和 `replay-scheduled` 会写入 `state.json` 的 `notificationEvents`，同时尝试直接调用 Windows 气泡提示。watcher 托盘会用常驻托盘图标消费这些事件，写入 `shownAt`，并在 `watcher.log` 记录 `notification-shown`。普通高风险轮询和正常 user message 不会创建通知事件。
+
 ## 成功标准
 
 小程序把任务重新投递到线程后，会检查线程记录里是否能读到对应的 user message。只要读到，就标记为 `visible_in_thread`。
