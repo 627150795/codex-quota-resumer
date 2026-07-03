@@ -1,84 +1,125 @@
 # Codex Quota Resumer
 
-这是一个给 Codex Desktop 用的本地小程序：当 Codex 额度接近用完时，它会开始轻量监控当前线程的新消息；如果额度用尽，它会备份你后续发出的任务，读取额度恢复时间，并在恢复后把任务重新投递回原来的 Codex 线程。
+Codex Quota Resumer 是一个给 **Windows + Codex Desktop** 使用的本地小工具。它在 Codex 额度接近用完时监控指定线程，备份后续 user message；如果额度耗尽，它会读取恢复时间，并在恢复后把备份任务重新投递到同一个 Codex 线程。
 
-它解决的问题很简单：你不用盯着额度刷新，也不用手动复制失败任务。额度恢复后，小程序会自动把已备份的任务续上。
+它还带一个 Windows 托盘 watcher：Codex Desktop 打开时启动 resumer，Codex 关闭时停止 resumer，并在右下角托盘显示等待重投的任务。
 
-## English Overview
+## 前提
 
-Codex Quota Resumer is a small local utility for Codex Desktop. When your Codex quota is close to exhaustion, it watches the current thread, backs up new user messages, reads the quota reset time, and replays pending tasks back into the same Codex thread after the quota recovers.
+已验证环境：
 
-It also includes a lightweight Windows tray watcher: the watcher starts the resumer when Codex Desktop is open, stops it when Codex closes, and shows queued replay notifications from the tray icon.
+- Windows 11：`Microsoft Windows NT 10.0.26200.0`
+- Windows PowerShell：`5.1.26100.7019`
+- Node.js：`v24.14.0`
+- Codex CLI：`codex-cli 0.142.3`
+- Codex Desktop：需要已安装并能正常登录使用
 
-## 功能
-
-- 监控 Codex Desktop 的额度使用情况。
-- 额度高风险时备份当前线程的新 user message。
-- 支持备份文本和本地图片路径；图片会复制到本地备份目录。
-- 额度耗尽后读取恢复时间，自动安排恢复后重投。
-- 重投到同一个 Codex threadId。
-- 用 Windows 通知弹窗提示备份、安排、重投成功或失败。
-- 本地保存状态和日志，方便排查。
-
-## 使用
-
-先确认本机能运行：
+使用前确认这些命令可用：
 
 ```powershell
 node --version
 codex --version
 ```
 
-启动监控：
+如果 `codex --version` 不存在，先安装或修复 Codex CLI。这个项目依赖 `codex app-server --stdio`，只安装 Codex Desktop 但没有可用的 `codex` 命令时不能运行。
+
+## 下载后进入目录
+
+用 Git clone：
 
 ```powershell
-.\start.ps1 -ThreadId "你的 Codex threadId"
+git clone https://github.com/627150795/codex-quota-resumer.git
+cd codex-quota-resumer
 ```
 
-安装成“登录后常驻 watcher”：watcher 会低频监控 Codex 桌面进程；Codex 打开时启动续跑小程序，Codex 关闭时关闭续跑小程序。
-右下角会出现一个蓝色 `C` 托盘图标，双击可以查看等待发送的任务；任务一旦投递到线程，就不会再出现在等待列表里。
+或从 GitHub 下载 ZIP 后：
 
 ```powershell
-.\install-watcher-startup.ps1 -ThreadId "你的 Codex threadId"
+Expand-Archive .\codex-quota-resumer-main.zip -DestinationPath .
+cd .\codex-quota-resumer-main
 ```
 
-卸载：
+下面所有命令都假设你已经在项目目录里，也就是能看到 `start.ps1`、`watch-codex.ps1` 和 `codex-quota-resumer.mjs` 的目录。
+
+## 获取 threadId
+
+`threadId` 是目标 Codex 线程的内部 id。resumer 必须知道它要把任务重投到哪个线程。
+
+推荐按这个顺序找：
+
+1. 在 Codex Desktop 打开你要续跑的线程。
+2. 如果 UI 有复制线程链接、分享链接、Copy Link、Open in Browser 等入口，复制链接。
+3. 把链接粘到 PowerShell 里提取 UUID：
 
 ```powershell
-.\uninstall-watcher-startup.ps1
+$url = Read-Host "Paste Codex thread link"
+[regex]::Matches($url, "[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}") | ForEach-Object Value
 ```
 
-也可以直接运行：
+4. 如果 UI 没有链接入口，尝试从本机 Codex 日志或状态文件里搜索最近出现的线程 id：
+
+```powershell
+$roots = @("$env:APPDATA", "$env:LOCALAPPDATA", "$env:USERPROFILE\.codex")
+Get-ChildItem $roots -Recurse -File -ErrorAction SilentlyContinue |
+  Select-String -Pattern "[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}" -ErrorAction SilentlyContinue |
+  Select-Object -First 50 Path, LineNumber, Line
+```
+
+5. 如果 UI 链接和本机日志都拿不到，当前版本没有一个稳定公开的“列出当前线程 id”命令；你需要自己从当前线程链接、开发者工具、日志或其他本机状态里确认 thread id。
+
+不要把真实 `threadId` 提交到公开仓库或截图发到公开渠道。
+
+## 手动启动
+
+PowerShell 默认可能拦截本地脚本。最可复制的启动方式是对当前命令使用 `ExecutionPolicy Bypass`：
+
+```powershell
+powershell -NoProfile -ExecutionPolicy Bypass -File .\start.ps1 -ThreadId "你的 Codex threadId"
+```
+
+也可以直接跑 Node 脚本：
 
 ```powershell
 node .\codex-quota-resumer.mjs --thread-id "你的 Codex threadId"
 ```
 
-`threadId` 可以从 Codex 线程链接、日志或你自己的测试脚本里取得。不要把真实线程 ID 上传到公开仓库。
-
-## 常用参数
+常用参数：
 
 ```powershell
 node .\codex-quota-resumer.mjs --thread-id "..." --high-risk-percent 90
 ```
 
-- `--high-risk-percent`：达到多少百分比后开始高频监控和备份，默认 `95`。
+- `--high-risk-percent`：达到多少额度使用百分比后开始高频监控和备份，默认 `95`。
 - `--data-dir`：状态、日志、备份目录，默认 `.codex-quota-resumer`。
-- `--no-notify`：关闭 Windows 弹窗。
+- `--no-notify`：关闭 Windows 通知。
 - `--once`：只检查一次额度，适合测试。
 - `--replay-now latest`：立刻重投最近一条未完成备份。
 
-## 通知
+## 安装 watcher
 
-`backup-saved` 和 `replay-scheduled` 会写入 `state.json` 的 `notificationEvents`，同时尝试直接调用 Windows 气泡提示。watcher 托盘会用常驻托盘图标消费这些事件，写入 `shownAt`，并在 `watcher.log` 记录 `notification-shown`。普通高风险轮询和正常 user message 不会创建通知事件。
+安装“登录后常驻 watcher”：
 
-## 成功标准
+```powershell
+powershell -NoProfile -ExecutionPolicy Bypass -File .\install-watcher-startup.ps1 -ThreadId "你的 Codex threadId"
+```
 
-小程序把任务重新投递到线程后，会检查线程记录里是否能读到对应的 user message。只要读到，就标记为 `visible_in_thread`。
+安装脚本会：
 
-Codex 后续能不能生成完整 assistant 回复，仍然取决于 Codex 当时的额度、网络和模型请求状态。
+- 在 Windows 启动目录创建 `Codex Quota Resumer Watcher.lnk`。
+- 立即以隐藏窗口启动 `watch-codex.ps1`。
+- watcher 每隔一段时间检查 Codex Desktop 是否运行。
+- Codex Desktop 运行时启动 resumer；Codex 关闭时停止 resumer。
+- 托盘图标可双击查看等待重投的任务，右键可打开日志或退出。
 
-## 数据位置
+## 卸载 watcher
+
+```powershell
+powershell -NoProfile -ExecutionPolicy Bypass -File .\uninstall-watcher-startup.ps1
+```
+
+卸载脚本会删除启动目录里的 watcher 快捷方式。已经运行中的托盘 watcher 如果还在，右键托盘图标选择 `Exit` 退出；或重启 Windows。
+
+## 数据和隐私
 
 默认数据目录：
 
@@ -86,14 +127,38 @@ Codex 后续能不能生成完整 assistant 回复，仍然取决于 Codex 当�
 .codex-quota-resumer/
 ```
 
-里面会有：
+里面会保存：
 
-- `state.json`：备份和重投状态。
-- `resumer.log`：运行日志。
-- `backups/`：图片等本地备份。
+- `state.json`：线程 id、备份状态、待重投任务、prompt 文本预览和完整消息内容。
+- `resumer.log`：运行日志、额度读取、重投状态、错误信息。
+- `watcher.log`：watcher 启停、托盘通知、异常信息。
+- `backups/`：本地图片副本。脚本会把 user message 里的本地图片复制一份到这里。
 
-这些文件不会上传到 GitHub。
+这些文件默认不会上传 GitHub，但它们可能包含 prompt、图片路径、图片副本、线程 id 和任务内容。不要把项目放在 OneDrive、Dropbox、iCloud、公司共享盘或会自动同步/共享的目录里。不要把 `.codex-quota-resumer/` 打包给别人。
 
-## 注意
+## 限制和风险
 
-这个项目依赖 Codex Desktop 当前可用的 `codex app-server --stdio` 能力。它不是 OpenAI 官方发布的稳定自动化接口；如果 Codex Desktop 以后调整 app-server 协议，需要同步更新脚本。
+这个项目依赖 Codex Desktop 当前可用的 `codex app-server --stdio` 能力。它不是 OpenAI 官方承诺稳定的自动化接口；如果 Codex Desktop 或 Codex CLI 调整 app-server 协议、事件名、字段结构、鉴权方式或额度返回格式，脚本可能失效，需要同步更新。
+
+多窗口和多线程限制：
+
+- 一个 watcher 安装只绑定一个 `threadId`。
+- 多个 Codex Desktop 窗口同时打开时，watcher 只判断 Codex Desktop 进程是否存在，不会自动识别当前激活窗口属于哪个线程。
+- 如果你想监控另一个线程，需要卸载后用新的 `threadId` 重新安装，或手动启动另一份并指定不同 `--data-dir`。
+- 不建议多个 resumer 同时监控同一个 `threadId`，可能重复备份或重复重投。
+- 已经重投到线程的任务只表示 user message 可见；Codex 后续是否完整生成 assistant 回复，仍取决于当时额度、网络和模型请求状态。
+
+## 推广前测试 checklist
+
+发布给陌生用户前，至少在干净目录跑一遍：
+
+- `node --version` 和 `codex --version` 都能输出版本。
+- 从 GitHub clone 或 ZIP 解压后，按 README 的 `cd` 步骤能进入正确目录。
+- `powershell -NoProfile -ExecutionPolicy Bypass -File .\start.ps1 -ThreadId "..."` 能启动。
+- 用错误或不存在的 `threadId` 测试时，错误信息能在 `.codex-quota-resumer/resumer.log` 里看到。
+- `powershell -NoProfile -ExecutionPolicy Bypass -File .\install-watcher-startup.ps1 -ThreadId "..."` 会创建启动目录快捷方式，并出现托盘图标。
+- Codex Desktop 关闭后，watcher 会停止 resumer；重新打开 Codex Desktop 后会再启动。
+- 托盘右键 `Open log` 能打开日志。
+- `powershell -NoProfile -ExecutionPolicy Bypass -File .\uninstall-watcher-startup.ps1` 会删除启动目录快捷方式。
+- `.codex-quota-resumer/` 没有被 Git 跟踪，且没有放在同步盘/共享目录。
+- 在当前 Codex Desktop/CLI 版本上确认 `codex app-server --stdio` 协议仍可用。
