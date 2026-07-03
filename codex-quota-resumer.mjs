@@ -72,11 +72,12 @@ $n.Dispose()
 
 function queueNotification(type, title, body, dedupeKey) {
   if (!notifications) return;
-  const key = `${type}:${dedupeKey || body || title}`;
+  const key = `${threadId}:${type}:${dedupeKey || body || title}`;
   if (!state.notificationEvents.some((event) => event.key === key)) {
     state.notificationEvents.push({
       id: `notification-${Date.now()}-${randomUUID()}`,
       key,
+      threadId,
       type,
       title,
       body,
@@ -165,6 +166,10 @@ function openServer() {
     });
   }
 
+  function isTargetThreadEvent(params) {
+    return params?.threadId === threadId || params?.turn?.threadId === threadId;
+  }
+
   cp.stdout.on('data', (chunk) => {
     buf += chunk.toString('utf8');
     const lines = buf.split(/\r?\n/);
@@ -187,11 +192,15 @@ function openServer() {
         continue;
       }
 
-      if (msg.method === 'turn/started' && highRiskMode) captureFromItems(msg.params?.turn?.items || [], 'turn-started');
+      if (msg.method === 'turn/started' && highRiskMode && isTargetThreadEvent(msg.params)) {
+        captureFromItems(msg.params?.turn?.items || [], 'turn-started');
+      }
       if (msg.method === 'turn/completed') {
-        completedEvents.push(msg.params);
-        if (highRiskMode) captureFromItems(msg.params?.turn?.items || [], 'turn-completed');
-        for (const waiter of [...completedWaiters]) waiter.check();
+        if (isTargetThreadEvent(msg.params)) {
+          completedEvents.push(msg.params);
+          if (highRiskMode) captureFromItems(msg.params?.turn?.items || [], 'turn-completed');
+          for (const waiter of [...completedWaiters]) waiter.check();
+        }
       }
       if (msg.method === 'account/rateLimits/updated') {
         latestBucket = getCodexBucket({ rateLimits: msg.params?.rateLimits });
