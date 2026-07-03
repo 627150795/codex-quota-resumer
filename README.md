@@ -4,6 +4,12 @@
 
 它解决的问题很简单：你不用盯着额度刷新，也不用手动复制失败任务。额度恢复后，小程序会自动把已备份的任务续上。
 
+## English Overview
+
+Codex Quota Resumer is a small local utility for Codex Desktop. When your Codex quota is close to exhaustion, it watches the current thread, backs up new user messages, reads the quota reset time, and replays pending tasks back into the same Codex thread after the quota recovers.
+
+It also includes a lightweight Windows tray watcher: the watcher starts the resumer when Codex Desktop is open, stops it when Codex closes, and shows queued replay notifications from the tray icon.
+
 ## 功能
 
 - 监控 Codex Desktop 的额度使用情况。
