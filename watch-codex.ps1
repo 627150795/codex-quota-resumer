@@ -19,6 +19,26 @@ function Write-WatcherLog($Message) {
   "$(Get-Date -Format o) $Message" | Add-Content -LiteralPath $LogPath -Encoding UTF8
 }
 
+function Read-State {
+  if (-not (Test-Path -LiteralPath $StatePath)) { return $null }
+  try {
+    Get-Content -LiteralPath $StatePath -Raw -Encoding UTF8 | ConvertFrom-Json
+  } catch {
+    Write-WatcherLog "state-read-error $($_.Exception.Message)"
+    $null
+  }
+}
+
+function Write-State($State) {
+  try {
+    $json = $State | ConvertTo-Json -Depth 20
+    $utf8NoBom = New-Object System.Text.UTF8Encoding($false)
+    [System.IO.File]::WriteAllText($StatePath, $json, $utf8NoBom)
+  } catch {
+    Write-WatcherLog "state-write-error $($_.Exception.Message)"
+  }
+}
+
 function New-TrayIcon {
   $bitmap = New-Object System.Drawing.Bitmap 16, 16
   $g = [System.Drawing.Graphics]::FromImage($bitmap)
@@ -61,17 +81,40 @@ function Start-Resumer {
 }
 
 function Get-WaitingBackups {
-  if (-not (Test-Path -LiteralPath $StatePath)) { return @() }
-  try {
-    $state = Get-Content -LiteralPath $StatePath -Raw -Encoding UTF8 | ConvertFrom-Json
-    @($state.backups | Where-Object {
-      $_.threadId -eq $ThreadId -and
-      $_.status -in @("captured", "scheduled", "retry_scheduled")
-    })
-  } catch {
-    Write-WatcherLog "state-read-error $($_.Exception.Message)"
-    @()
+  $state = Read-State
+  if ($null -eq $state) { return @() }
+  @($state.backups | Where-Object {
+    $_.threadId -eq $ThreadId -and
+    $_.status -in @("captured", "scheduled", "retry_scheduled")
+  })
+}
+
+function Show-QueuedNotifications {
+  $state = Read-State
+  if ($null -eq $state -or $null -eq $state.notificationEvents) { return }
+
+  $pending = @($state.notificationEvents | Where-Object {
+    $_.type -in @("backup-saved", "replay-scheduled") -and
+    -not $_.shownAt -and
+    -not $ShownNotificationIds.Contains([string]$_.id)
+  })
+  if ($pending.Count -eq 0) { return }
+
+  if ($pending.Count -eq 1) {
+    $tray.BalloonTipTitle = [string]$pending[0].title
+    $tray.BalloonTipText = [string]$pending[0].body
+  } else {
+    $tray.BalloonTipTitle = "Codex Quota Resumer"
+    $tray.BalloonTipText = (($pending | ForEach-Object { "$($_.title): $($_.body)" }) -join "`n")
   }
+  $tray.ShowBalloonTip(8000)
+
+  foreach ($notification in $pending) {
+    $ShownNotificationIds.Add([string]$notification.id) | Out-Null
+    $notification.shownAt = (Get-Date -Format o)
+    Write-WatcherLog "notification-shown id=$($notification.id) type=$($notification.type)"
+  }
+  Write-State $state
 }
 
 function Show-WaitingBackups {
@@ -108,6 +151,8 @@ function Sync-Resumer {
         Stop-ProcessTree $p.ProcessId
       }
     }
+
+    Show-QueuedNotifications
   } catch {
     Write-WatcherLog "sync-error $($_.Exception.Message)"
   }
@@ -117,6 +162,7 @@ $tray = New-Object System.Windows.Forms.NotifyIcon
 $tray.Icon = New-TrayIcon
 $tray.Text = "Codex Quota Resumer"
 $tray.Visible = $true
+$ShownNotificationIds = [System.Collections.Generic.HashSet[string]]::new()
 
 $menu = New-Object System.Windows.Forms.ContextMenuStrip
 $showItem = $menu.Items.Add("Show waiting tasks")
