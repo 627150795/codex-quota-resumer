@@ -46,13 +46,12 @@ function New-TrayIcon {
   $g.PixelOffsetMode = [System.Drawing.Drawing2D.PixelOffsetMode]::Half
   $g.Clear([System.Drawing.Color]::FromArgb(37, 99, 235))
   $white = New-Object System.Drawing.SolidBrush ([System.Drawing.Color]::White)
-  $brush = New-Object System.Drawing.SolidBrush ([System.Drawing.Color]::FromArgb(167, 243, 208))
-  $g.FillRectangle($white, 4, 4, 8, 2)
-  $g.FillRectangle($white, 4, 4, 2, 8)
-  $g.FillRectangle($white, 4, 10, 8, 2)
-  $g.FillRectangle($brush, 11, 3, 3, 3)
+  $g.FillRectangle($white, 7, 3, 2, 2)
+  $g.FillRectangle($white, 6, 5, 4, 2)
+  $g.FillRectangle($white, 5, 7, 6, 2)
+  $g.FillRectangle($white, 7, 9, 2, 4)
+  $g.FillRectangle($white, 5, 12, 6, 2)
   $white.Dispose()
-  $brush.Dispose()
   $g.Dispose()
   [System.Drawing.Icon]::FromHandle($bitmap.GetHicon())
 }
