@@ -29,6 +29,18 @@ codex --version
 .\start.ps1 -ThreadId "你的 Codex threadId"
 ```
 
+安装成“登录后常驻 watcher”：watcher 会低频监控 Codex 桌面进程；Codex 打开时启动续跑小程序，Codex 关闭时关闭续跑小程序。
+
+```powershell
+.\install-watcher-startup.ps1 -ThreadId "你的 Codex threadId"
+```
+
+卸载：
+
+```powershell
+.\uninstall-watcher-startup.ps1
+```
+
 也可以直接运行：
 
 ```powershell
