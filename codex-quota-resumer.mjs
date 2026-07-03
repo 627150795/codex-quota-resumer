@@ -285,7 +285,11 @@ async function captureThreadRead(server, source) {
 }
 
 function pendingBackups() {
-  return state.backups.filter((backup) => backup.threadId === threadId && !replayed.has(backup.id));
+  return state.backups.filter((backup) => {
+    if (backup.threadId !== threadId || replayed.has(backup.id)) return false;
+    if (['completed', 'visible_in_thread', 'failed'].includes(backup.status)) return false;
+    return (state.replayAttempts[backup.id] || 0) < 2;
+  });
 }
 
 function schedulePendingBackups(bucket) {
