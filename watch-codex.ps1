@@ -42,15 +42,16 @@ function Write-State($State) {
 function New-TrayIcon {
   $bitmap = New-Object System.Drawing.Bitmap 16, 16
   $g = [System.Drawing.Graphics]::FromImage($bitmap)
-  $g.SmoothingMode = [System.Drawing.Drawing2D.SmoothingMode]::AntiAlias
+  $g.SmoothingMode = [System.Drawing.Drawing2D.SmoothingMode]::None
+  $g.PixelOffsetMode = [System.Drawing.Drawing2D.PixelOffsetMode]::Half
   $g.Clear([System.Drawing.Color]::FromArgb(37, 99, 235))
-  $pen = New-Object System.Drawing.Pen ([System.Drawing.Color]::White), 2.3
-  $pen.StartCap = "Round"
-  $pen.EndCap = "Round"
-  $g.DrawArc($pen, 4, 4, 8, 8, 120, 240)
+  $white = New-Object System.Drawing.SolidBrush ([System.Drawing.Color]::White)
   $brush = New-Object System.Drawing.SolidBrush ([System.Drawing.Color]::FromArgb(167, 243, 208))
-  $g.FillEllipse($brush, 11, 3, 2.8, 2.8)
-  $pen.Dispose()
+  $g.FillRectangle($white, 4, 4, 8, 2)
+  $g.FillRectangle($white, 4, 4, 2, 8)
+  $g.FillRectangle($white, 4, 10, 8, 2)
+  $g.FillRectangle($brush, 11, 3, 3, 3)
+  $white.Dispose()
   $brush.Dispose()
   $g.Dispose()
   [System.Drawing.Icon]::FromHandle($bitmap.GetHicon())
